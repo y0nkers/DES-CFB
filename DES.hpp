@@ -10,12 +10,13 @@ private:
 	std::vector<char> message; // message in bytes
 
 	void leftShift(std::bitset<28>& bits, unsigned count);
+	std::bitset<64> generateIV();
 	std::bitset<48> generateSubKey(std::bitset<28>& block_C, std::bitset<28>& block_D, unsigned round);
 	std::bitset<32> feistel(std::bitset<32>& block_R, std::bitset<48> subkey);
 public:
 	DES(std::string key_filename, std::string message_filename);
-	void encrypt();
-	void decrypt();
+	void encrypt(std::string filename);
+	void decrypt(std::string encrypted_filename, std::string decrypted_filename);
 };
 
 #endif // !DES_HPP

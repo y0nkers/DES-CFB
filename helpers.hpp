@@ -6,6 +6,7 @@
 #include <sstream>
 #include <limits>
 
+#include <random>
 #include <algorithm>
 #include <unordered_map>
 #include <vector>
@@ -14,10 +15,5 @@
 
 std::string getStringFromFile(std::string filename);
 std::vector<char> readBytesFromFile(std::string filename);
-bool isUnique(std::string str);
-bool isInAlphabet(char& c, std::string alphabet);
-bool isPrime(unsigned long long n);
-bool isPowerOfTwo(unsigned long long n);
-int gcd(int a, int b);
 
 #endif // !HELPERS_HPP
