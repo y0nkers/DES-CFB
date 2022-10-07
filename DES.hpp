@@ -17,6 +17,7 @@ public:
 	DES(std::string key_filename, std::string message_filename);
 	void encrypt(std::string filename);
 	void decrypt(std::string encrypted_filename, std::string decrypted_filename);
+	void demonstration();
 };
 
 #endif // !DES_HPP

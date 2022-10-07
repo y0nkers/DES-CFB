@@ -183,9 +183,106 @@ std::bitset<32> DES::feistel(std::bitset<32>& block_R, std::bitset<48> subkey) {
 	for (int i = 0; i < 8; ++i) block_string += blocks_b[i].to_string();
 
 	std::bitset<32> result;
-	for (int i = 0; i < 32; ++i) result[31 - i] = block_string[i] - '0';
+	for (int i = 0; i < 32; ++i) result[31 - i] = block_string[block_R_permutation[i] - 1] - '0';
 
 	return result;
+}
+
+void DES::demonstration() {
+	std::string key = "01001011010001010101100101010111010011110101001001000100";
+	std::bitset<56> key_bits(key);
+	std::cout << "Ключ:\n" << key << std::endl;
+
+	const std::string key_string = key;
+	std::string extended_key_string;
+	std::string fragment;
+	for (int i = 0; i < 8; i++) {
+		fragment = key_string.substr(i * 7, 7);
+		std::string::difference_type ones_count = std::count(fragment.begin(), fragment.end(), '1');
+		if (ones_count % 2 == 0) fragment += '1';
+		else fragment += '0';
+		extended_key_string += fragment;
+	}
+	std::cout << "Расширяем ключ до 64 бит:\n" << extended_key_string << std::endl;
+
+	std::bitset<28> block_C, block_D;
+	for (int i = 0; i < 28; i++) {
+		block_C[27 - i] = extended_key_string[initial_key_permutaion[0][i] - 1] - '0';
+		block_D[27 - i] = extended_key_string[initial_key_permutaion[1][i] - 1] - '0';
+	}
+	std::cout << "\nБлоки C0 и D0, получаемые перестановкой расширенного ключа по таблице:\nC0: " << block_C.to_string() << "\nD0: " << block_D.to_string() << std::endl;
+
+	std::string msg = "ENCRYPT.";
+	std::string block_str;
+	for (auto c : msg) block_str += std::bitset<8>(c).to_string();
+	std::cout << "\nБлок для шифрования: " << msg << std::endl << "Биты:\n" << block_str << std::endl;
+
+	std::bitset<64> permutated_bits;
+	for (int j = 0; j < 64; j++) permutated_bits[63 - j] = block_str[initial_message_permutation[j] - 1] - '0';
+	block_str = permutated_bits.to_string();
+	std::cout << "\nНачальная перестановка блока:\n" << block_str << std::endl;
+
+	std::bitset<32> block_L(block_str.substr(0, block_str.size() / 2));
+	std::bitset<32> block_R(block_str.substr(block_str.size() / 2, block_str.size()));
+	std::bitset<32> temp;
+	std::cout << "\n1 раунд шифрования\n\nРазбить блок на две части для использования в раунде:\nL0=" << block_L.to_string() << " R0=" << block_R.to_string() << std::endl;
+
+	std::cout << "\nГенерирование ключа k1:\nПолучаем блоки C1 и D1 с помощью левых циклических сдвигов C0 и D0\n";
+	leftShift(block_C, key_shift_sizes[0]);
+	leftShift(block_D, key_shift_sizes[0]);
+	std::cout << "C1: " << block_C.to_string() << "\nD1: " << block_D.to_string() << std::endl;
+
+	std::string CD;
+	CD += block_C.to_string();
+	CD += block_D.to_string();
+	std::cout << "Соединяем их вместе, получаем 56 бит:\nCD: " << CD << std::endl;
+	std::bitset<48> subkey;
+	for (int i = 0; i < 48; ++i) subkey[47 - i] = CD[subkey_permutation[i] - 1] - '0';
+	std::cout << "Получаем 48-битный ключ k1, состоящий из выбранных по таблице битов CD\nk1: " << subkey.to_string() << std::endl;
+
+	std::cout << "\nВычисляем функцию Фейстеля f(R0, k1):\n";
+	temp = block_R;
+	std::bitset<48> expanded_block;
+	for (int i = 0; i < 48; ++i) expanded_block[47 - i] = block_R[block_R_expansion[i] - 1];
+	std::cout << "Расширяем 32-битовый R0 до 48-битового E(R0) путём дублирования битов согласно таблице:\nR0:    " << temp.to_string() << "\nE(R0): " << expanded_block.to_string() << std::endl;
+
+	std::cout << "\nРасширенный блок складываем по модулю 2 с k1, т.е E(R0) XOR k1:\n    " << expanded_block << "\nXOR\n    " << subkey << std::endl;
+	expanded_block = expanded_block ^ subkey;
+	std::cout << "    " << expanded_block << std::endl;
+
+	std::cout << "\nРезультат представляется в виде 8 последовательных блоков B по 6 бит:\n";
+	std::string block_string = expanded_block.to_string();
+	std::bitset<4> blocks_b[8];
+	for (int i = 0; i < 8; ++i) {
+		fragment = block_string.substr(i * 6, 6); // 6 bit
+		int row = (fragment[0] - '0') * 2 + (fragment[5] - '0'); // Row of needed permutation - first and last bits of fragment = binary number -> decimal number
+		int column = (fragment[1] - '0') * 8 + (fragment[2] - '0') * 4 + (fragment[3] - '0') * 2 + (fragment[4] - '0'); // same with column
+		blocks_b[i] = std::bitset<4>(blocks_B_permutation[i][row][column]);
+		std::cout << "B" << i + 1 << ": " << fragment << std::endl;
+	}
+	std::cout << "\nДалее каждый из блоков B трансформируется в 4-битовый блок с помощью преобразований из таблиц\n\nПосле преобразований\n";
+	for (int i = 0; i < 8; ++i) std::cout << "B" << i + 1 << ": " << blocks_b[i] << std::endl;
+
+	block_string = "";
+	for (int i = 0; i < 8; ++i) block_string += blocks_b[i].to_string();
+	std::cout << "\nСоединяем все 8 блоков вместе, получаем 32-битовый блок B: " << block_string << std::endl;
+	std::bitset<32> result;
+	for (int i = 0; i < 32; ++i) result[31 - i] = block_string[block_R_permutation[i] - 1] - '0';
+	std::cout << "\nПрименяем к нему перестановку P, получаем результат функции Фейстеля:\nf(R0, k1) = " << result << std::endl;
+
+	std::cout << "\nЛевую половину делаем равной правой половине предыдущего (L1 = R0)\nL1: " << block_R;
+	std::cout << "\n\nПравая половина - XOR предыдущего L и результата f, т.е R1 = L0 XOR f(R0, k1)\nR1:\n    " << block_L << "\nXOR\n    " << result;
+	temp = block_R;
+	block_R = block_L ^ result;
+	block_L = temp;
+	std::cout << "\n  = " << block_R << std::endl;
+	
+	block_str = block_L.to_string();
+	block_str += block_R.to_string();
+	std::cout << "\nСоединяем L1 и R1 вместе:\n" << block_str;
+	for (int j = 0; j < 64; j++) permutated_bits[63 - j] = block_str[final_message_permutation[j] - 1] - '0';
+	block_str = permutated_bits.to_string();
+	std::cout << "\nВыполняем конечную перестановку по таблице:\n" << block_str << std::endl;
 }
 
 DES::DES(std::string key_filename, std::string message_filename) {
@@ -264,8 +361,10 @@ void DES::encrypt(std::string filename) {
 		}
 
 		// Final permutation of message
-		block_str = block_R.to_string();
-		block_str += block_L.to_string();
+		block_str = block_L.to_string();
+		block_str += block_R.to_string();
+		for (int j = 0; j < 64; j++) permutated_bits[63 - j] = block_str[final_message_permutation[j] - 1] - '0';
+		block_str = permutated_bits.to_string();
 		message_block.clear();
 		for (int i = 0; i < 8; ++i) {
 			std::bitset<8> char1(block_str.substr(i * 8, 8));
@@ -278,6 +377,8 @@ void DES::encrypt(std::string filename) {
 
 	encrypted_file.close();
 	std::cout << "Message successfully encrypted and written to file " << filename << "." << std::endl;
+
+	// TODO: write extended key into file for further decryption?
 }
 
 void DES::decrypt(std::string encrypted_filename, std::string decrypted_filename) {
