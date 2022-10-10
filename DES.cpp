@@ -1,5 +1,6 @@
 #include "DES.hpp"
 
+// Initial permutation of message block
 int initial_message_permutation[64] = {
 	58, 50, 42, 34, 26, 18, 10, 2,
 	60, 52, 44, 36, 28, 20, 12, 4,
@@ -12,7 +13,7 @@ int initial_message_permutation[64] = {
 };
 
 // Bits 8, 16, 24, 32, 40, 48, 56 and 64 do not participate in the permutation
-int initial_key_permutaion[2][28] = {
+int key_permutaion[2][28] = {
 	{
 		57, 49, 41, 33, 25, 17, 9,
 		1,  58, 50, 42, 34, 26, 18,
@@ -27,8 +28,10 @@ int initial_key_permutaion[2][28] = {
 	}
 };
 
+// Specifies how many times to shift blocks C and D to get a subkey on each round
 int key_shift_sizes[16] = { 1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1 };
 
+// Specifies which bits are taken from the 56-bit CD vector for a 48-bit round subkey
 int subkey_permutation[48] = {
 	14, 17, 11, 24, 1,  5,
 	3,  28, 15, 6,  21, 10,
@@ -40,6 +43,7 @@ int subkey_permutation[48] = {
 	46, 42, 50, 36, 29, 32
 };
 
+// Extends the R block inside the Feistel function by duplicating some bits
 int block_R_expansion[48] = {
 	32, 1,  2,  3,  4,  5,
 	4,  5,  6,  7,  8,  9,
@@ -51,6 +55,7 @@ int block_R_expansion[48] = {
 	28, 29, 30, 31, 32, 1
 };
 
+// S-boxes for transform block B inside the Feistel function from 6 bit to 4 bit
 int blocks_B_permutation[8][4][16] = {
 	{
 		14, 4, 13, 1, 2, 15, 11, 8, 3, 10, 6, 12, 5, 9, 0, 7,
@@ -102,6 +107,7 @@ int blocks_B_permutation[8][4][16] = {
 	}
 };
 
+// Permutation applied to the 32-bit block B1...B8 to obtain the value of the Feistel function
 int block_R_permutation[32] = { 
 	16, 7,  20, 21,
 	29, 12, 28, 17,
@@ -113,6 +119,7 @@ int block_R_permutation[32] = {
 	22, 11, 4,  25 
 };
 
+// Final permutation of message block
 int final_message_permutation[64] = { 
 	40, 8, 48, 16, 56, 24, 64, 32,
 	39, 7, 47, 15, 55, 23, 63, 31,
@@ -124,26 +131,47 @@ int final_message_permutation[64] = {
 	33, 1, 41,  9, 49, 17, 57, 25 
 };
 
+// Rotate block bits to the left
 void DES::leftShift(std::bitset<28>& bits, unsigned count) {
 	bits = bits << count | bits >> (28 - count);
 }
 
-/* Generate Initialize Vector for CFB mode */
-std::bitset<64> generateIV() {
+/* Generate pseudo-random 64 bits. Can be used for generating key or initialization vector for CFB mode*/
+std::bitset<64> DES::generateBytes(std::string output_filename, bool generateKey) {
 	std::mt19937_64 gen(time(NULL));
 	unsigned long long number = gen();
-	std::bitset<64> IV(number);
-	std::string IV_string = IV.to_string();
-	std::vector<char> IV_vector;
-	for (int i = 0; i < 8; ++i) {
-		std::bitset<8> byte(IV_string.substr(i * 8, 8));
-		int byte_value = byte.to_ulong();
-		IV_vector.push_back(static_cast<char>(byte_value));
+	std::bitset<64> bits(number);
+	
+	// Parity bits - each byte must contain an odd number of ones
+	if (generateKey) {
+		const std::string key_string = bits.to_string();
+		std::string fragment;
+		for (int i = 0; i < 8; i++) {
+			fragment = key_string.substr(i * 7 + i, 7);
+			std::string::difference_type ones_count = std::count(fragment.begin(), fragment.end(), '1');
+			if (ones_count % 2 == 0) bits[63 - (i * 8 + 7)] = 1;
+			else bits[63 - (i * 8 + 7)] = 0;
+		}
 	}
 
-	return IV;
+	std::string bits_str = bits.to_string();
+	std::vector<char> bits_vector;
+	for (int i = 0; i < 8; ++i) {
+		std::bitset<8> byte(bits_str.substr(i * 8, 8));
+		int byte_value = byte.to_ulong();
+		bits_vector.push_back(static_cast<char>(byte_value));
+	}
+
+	std::ofstream output_file(output_filename);
+	output_file.write(&bits_vector[0], bits_vector.size());
+	output_file.close();
+	if (generateKey) std::cout << "Key generated and written to file " << output_filename << "." << std::endl;
+	else std::cout << "Initial Vector generated and written to file " << output_filename << "." << std::endl;
+
+	return bits;
 }
 
+// Generate 48-bit subkey for current round
 std::bitset<48> DES::generateSubKey(std::bitset<28>& block_C, std::bitset<28>& block_D, unsigned round) {
 	leftShift(block_C, key_shift_sizes[round]);
 	leftShift(block_D, key_shift_sizes[round]);
@@ -158,6 +186,7 @@ std::bitset<48> DES::generateSubKey(std::bitset<28>& block_C, std::bitset<28>& b
 	return subkey;
 }
 
+// Feistel encryption function
 std::bitset<32> DES::feistel(std::bitset<32>& block_R, std::bitset<48> subkey) {
 	// 1. Expand block_R from 32 to 48 bits by duplicating some bits
 	std::bitset<48> expanded_block;
@@ -207,8 +236,8 @@ void DES::demonstration() {
 
 	std::bitset<28> block_C, block_D;
 	for (int i = 0; i < 28; i++) {
-		block_C[27 - i] = extended_key_string[initial_key_permutaion[0][i] - 1] - '0';
-		block_D[27 - i] = extended_key_string[initial_key_permutaion[1][i] - 1] - '0';
+		block_C[27 - i] = extended_key_string[key_permutaion[0][i] - 1] - '0';
+		block_D[27 - i] = extended_key_string[key_permutaion[1][i] - 1] - '0';
 	}
 	std::cout << "\nБлоки C0 и D0, получаемые перестановкой расширенного ключа по таблице:\nC0: " << block_C.to_string() << "\nD0: " << block_D.to_string() << std::endl;
 
@@ -285,49 +314,62 @@ void DES::demonstration() {
 	std::cout << "\nВыполняем конечную перестановку по таблице:\n" << block_str << std::endl;
 }
 
-DES::DES(std::string key_filename, std::string message_filename) {
-	std::string key = getStringFromFile(key_filename);
-	if (key.size() != 56) {
-		std::cout << "ERROR: Wrong key size (must be 56 ones or zeros)" << std::endl;
+DES::DES(std::string key_filename, std::string IV_filename) {
+	auto key = readBytesFromFile(key_filename);
+	if (key.size() != 8) {
+		std::cout << "ERROR: Wrong key size (must be 8 bytes)" << std::endl;
 		exit(-1);
 	}
 
-	try { this->key = std::bitset<56>(key); }
+	std::string key_string;
+	for (auto c : key) key_string += std::bitset<8>(c).to_string();
+
+	std::string fragment;
+	for (int i = 0; i < 8; i++) {
+		fragment = key_string.substr(i * 8, 8);
+		std::string::difference_type ones_count = std::count(fragment.begin(), fragment.end(), '1');
+		if (ones_count % 2 == 0) {
+			std::cout << "Error: bad key" << std::endl;
+			exit(-1);
+		}
+	}
+
+	try { this->key = std::bitset<64>(key_string); }
 	catch (std::exception& e) {
 		std::cout << "Error: invalid key characters" << std::endl;
 		exit(-1);
 	}
 
-	message = readBytesFromFile(message_filename);
+	if (IV_filename != "") {
+		auto IV_bytes = readBytesFromFile(IV_filename);
+		std::string block_str;
+		for (auto c : IV_bytes) block_str += std::bitset<8>(c).to_string();
+		this->IV = std::bitset<64>(block_str);
+	}
+	else IV = generateBytes("output\\IV.txt", false);
+}
+
+void DES::process(std::string message_filename, std::string output_filename, Mode mode) {
+	// Get message bytes
+	std::vector<char> message = readBytesFromFile(message_filename);
 	int remain_bytes = 8 - (message.size() % 8); // How many bytes must be added so that the message length is a multiple of 8 bytes
 	// if message length is already a multiple of 8 bytes
 	if (remain_bytes != 8) {
 		std::vector<char> tmp(remain_bytes, ' ');
 		message.insert(message.end(), tmp.begin(), tmp.end());
 	}
-}
 
-void DES::encrypt(std::string filename) {
 	// Extend key to 64 bit
 	const std::string key_string = key.to_string();
-	std::string extended_key_string;
-	std::string fragment;
-	for (int i = 0; i < 8; i++) {
-		fragment = key_string.substr(i * 7, 7);
-		std::string::difference_type ones_count = std::count(fragment.begin(), fragment.end(), '1');
-		if (ones_count % 2 == 0) fragment += '1';
-		else fragment += '0';
-		extended_key_string += fragment;
-	}
 
 	// Initialize C0, D0
 	std::bitset<28> block_C, block_D;
 	for (int i = 0; i < 28; i++) {
-		block_C[27 - i] = extended_key_string[initial_key_permutaion[0][i] - 1] - '0';
-		block_D[27 - i] = extended_key_string[initial_key_permutaion[1][i] - 1] - '0';
+		block_C[27 - i] = key_string[key_permutaion[0][i] - 1] - '0';
+		block_D[27 - i] = key_string[key_permutaion[1][i] - 1] - '0';
 	}
 
-	std::ofstream encrypted_file(filename);
+	std::ofstream output_file(output_filename);
 
 	for (int i = 0; i < message.size(); i += 8) {
 		// Message block size - 8 bytes
@@ -337,9 +379,11 @@ void DES::encrypt(std::string filename) {
 		std::string block_str;
 		for (auto c : message_block) block_str += std::bitset<8>(c).to_string();
 
+		std::bitset<64> message_bits(block_str);
+
 		// Initial message block permutation
 		std::bitset<64> permutated_bits;
-		for (int j = 0; j < 64; j++) permutated_bits[63 - j] = block_str[initial_message_permutation[j] - 1] - '0';
+		for (int j = 0; j < 64; j++) permutated_bits[63 - j] = IV[initial_message_permutation[j] - 1];
 
 		// Rewriting permutated bits to string
 		block_str = permutated_bits.to_string();
@@ -364,6 +408,15 @@ void DES::encrypt(std::string filename) {
 		block_str = block_L.to_string();
 		block_str += block_R.to_string();
 		for (int j = 0; j < 64; j++) permutated_bits[63 - j] = block_str[final_message_permutation[j] - 1] - '0';
+
+		permutated_bits = permutated_bits ^ message_bits;
+
+		// CFB mode: Ciphertext going to next stage
+		// Encrypt: Ciphertext = DES(Ci) XOR Plaintext
+		// Decrypt: Plaintext = DES(Ci) XOR Ciphertext 
+		if (mode == Mode::ENCRYPTION) IV = permutated_bits;
+		else IV = message_bits;
+
 		block_str = permutated_bits.to_string();
 		message_block.clear();
 		for (int i = 0; i < 8; ++i) {
@@ -372,15 +425,10 @@ void DES::encrypt(std::string filename) {
 			message_block.push_back(static_cast<char>(x));
 		}
 
-		encrypted_file.write(&message_block[0], message_block.size());
+		output_file.write(&message_block[0], message_block.size());
 	}
 
-	encrypted_file.close();
-	std::cout << "Message successfully encrypted and written to file " << filename << "." << std::endl;
-
-	// TODO: write extended key into file for further decryption?
-}
-
-void DES::decrypt(std::string encrypted_filename, std::string decrypted_filename) {
-	
+	output_file.close();
+	std::string operation = mode == Mode::ENCRYPTION ? "encrypted" : "decrypted";
+	std::cout << "Message successfully " << operation << " and written to file " << output_filename << "." << std::endl;
 }
